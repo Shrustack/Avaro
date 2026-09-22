@@ -1,0 +1,10 @@
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore editor settings
+.vscode/
+
+# Ignore local server files
+*.log
+npm-debug.log*

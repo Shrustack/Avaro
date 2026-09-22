@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Avaro Admin</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <style>
+    :root {
+      --bg: #fffaf4;
+      --panel: #fff;
+      --card: #fffdf9;
+      --accent: #d97706;
+      --accent-soft: #ffedd5;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --green: #2f9e6d;
+      --red: #dc4a4a;
+      --orange: #f59e0b;
+      --purple: #7269ef;
+      --shadow: rgba(15, 23, 42, 0.08);
+      --border: rgba(17, 24, 39, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: Arial, sans-serif; background: linear-gradient(180deg, #fffaf4 0%, #fff5ea 100%); color: var(--text);
+    }
+    .container { max-width: 1280px; margin: 0 auto; padding: 32px 20px 60px; }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center; gap: 16px;
+      background: linear-gradient(135deg, #ffffff, #fff7ee);
+      border: 1px solid var(--border); padding: 22px 24px; border-radius: 18px; margin-bottom: 28px;
+      box-shadow: 0 16px 32px var(--shadow);
+    }
+    .topbar h1 {
+      margin: 0; font-size: clamp(1.8rem, 3vw, 2.6rem); color: #1f2937;
+    }
+    .topbar a {
+      color: var(--accent); text-decoration: none; font-weight: 700; padding: 10px 14px; border-radius: 10px;
+      background: var(--accent-soft); border: 1px solid rgba(217, 119, 6, 0.15);
+    }
+    .summary {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px; margin-bottom: 28px;
+    }
+    .summary-card {
+      background: var(--panel); border-radius: 18px; padding: 18px 20px; box-shadow: 0 10px 22px var(--shadow); border: 1px solid var(--border);
+    }
+    .summary-card small { display: block; color: var(--muted); margin-bottom: 8px; letter-spacing: .04em; text-transform: uppercase; }
+    .summary-card strong { font-size: clamp(1.8rem, 3vw, 2.3rem); }
+    .table-wrap {
+      background: var(--panel); border-radius: 20px; padding: 12px; box-shadow: 0 16px 32px var(--shadow); border: 1px solid var(--border); overflow-x: auto;
+    }
+    table {
+      width: 100%; border-collapse: collapse; min-width: 980px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--border); padding: 16px 12px; text-align: left; vertical-align: top;
+    }
+    th {
+      color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: .08em; background: rgba(255, 237, 213, 0.5);
+    }
+    td strong { color: #111827; }
+    .badge {
+      display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .pending { background: rgba(245,158,11,.15); color: #a16207; }
+    .confirmed { background: rgba(47,158,109,.14); color: #176f4d; }
+    .arrived { background: rgba(217,119,6,.14); color: #985b08; }
+    .cancelled { background: rgba(220,74,74,.12); color: #aa2e2e; }
+    .completed { background: rgba(114,105,239,.12); color: #4d44d0; }
+    select {
+      background: #fff; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px;
+      min-width: 150px; font-size: 0.94rem; box-shadow: inset 0 1px 2px rgba(0,0,0,.03);
+    }
+    .empty {
+      padding: 26px; text-align: center; color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <h1>Avaro Restaurant Dashboard</h1>
+      <a href="/">Back to site</a>
+    </div>
+
+    <div class="summary" id="summary"></div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Customer</th>
+            <th>Date & Time</th>
+            <th>Guests</th>
+            <th>Seats</th>
+            <th>Status</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="booking-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const summaryEl = document.getElementById('summary');
+    const tableBody = document.getElementById('booking-table-body');
+
+    function renderSummary(summary) {
+      const cards = [
+        { label: 'Total', value: summary.total || 0 },
+        { label: 'Pending', value: summary.pending || 0 },
+        { label: 'Confirmed', value: summary.confirmed || 0 },
+        { label: 'Arrived', value: summary.arrived || 0 },
+        { label: 'Cancelled', value: summary.cancelled || 0 },
+      ];
+
+      summaryEl.innerHTML = cards.map(card => `
+        <div class="summary-card">
+          <small>${card.label}</small>
+          <strong>${card.value}</strong>
+        </div>
+      `).join('');
+    }
+
+    function renderRows(bookings) {
+      if (!bookings.length) {
+        tableBody.innerHTML = '<tr><td colspan="7" class="empty">No bookings yet.</td></tr>';
+        return;
+      }
+
+      tableBody.innerHTML = bookings.map(booking => `
+        <tr>
+          <td>${booking.id}</td>
+          <td>
+            <strong>${booking.name}</strong><br>
+            ${booking.email}<br>
+            ${booking.phone}
+          </td>
+          <td>${booking.date}<br>${booking.time}</td>
+          <td>${booking.guests}</td>
+          <td>${(booking.seats || []).join(', ')}</td>
+          <td>
+            <select data-id="${booking.id}" class="status-select">
+              <option value="pending" ${booking.status === 'pending' ? 'selected' : ''}>Pending</option>
+              <option value="confirmed" ${booking.status === 'confirmed' ? 'selected' : ''}>Confirmed</option>
+              <option value="arrived" ${booking.status === 'arrived' ? 'selected' : ''}>Arrived</option>
+              <option value="cancelled" ${booking.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+              <option value="completed" ${booking.status === 'completed' ? 'selected' : ''}>Completed</option>
+            </select>
+          </td>
+          <td>${booking.notes || '—'}</td>
+        </tr>
+      `).join('');
+
+      document.querySelectorAll('.status-select').forEach(select => {
+        select.addEventListener('change', async (event) => {
+          const id = event.target.dataset.id;
+          const status = event.target.value;
+
+          try {
+            await firestore.collection('bookings').doc(id).update({ status, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            loadBookings();
+          } catch (error) {
+            alert('Failed to update booking status.');
+          }
+        });
+      });
+    }
+
+    const firebaseConfig = window.firebaseConfig;
+    firebase.initializeApp(firebaseConfig);
+    const firestore = firebase.firestore();
+
+    async function loadBookings() {
+      try {
+        const snapshot = await firestore.collection('bookings').get();
+        const bookings = snapshot.docs.map(document => ({ id: document.id, ...document.data() }))
+          .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
+        const summary = { total: bookings.length };
+        ['pending', 'confirmed', 'arrived', 'cancelled'].forEach(status => {
+          summary[status] = bookings.filter(booking => booking.status === status).length;
+        });
+        renderSummary(summary);
+        renderRows(bookings);
+      } catch (error) {
+        console.error(error);
+        tableBody.innerHTML = '<tr><td colspan="7" class="empty">Could not load bookings.</td></tr>';
+      }
+    }
+
+    loadBookings();
+  </script>
+</body>
+</html>
